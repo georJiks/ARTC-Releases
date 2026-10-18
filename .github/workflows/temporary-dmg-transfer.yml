@@ -1,0 +1,36 @@
+name: Temporary DMG transfer
+on:
+  workflow_dispatch:
+    inputs:
+      source_url:
+        description: Temporary URL for the approved DMG
+        required: true
+        type: string
+permissions:
+  contents: write
+jobs:
+  transfer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Copy and verify approved distribution
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          python3 - <<'TRANSFER'
+          import os,json,subprocess,hashlib,pathlib,urllib.parse
+          event=json.load(open(os.environ['GITHUB_EVENT_PATH']))
+          url=event['inputs']['source_url']
+          assert urllib.parse.urlparse(url).hostname=='release-assets.githubusercontent.com'
+          print('::add-mask::'+url,flush=True)
+          filename='ARTC-0.9.5-osx-arm64.dmg'
+          expected='a53d964997313cf53c61b0585b4eec3c5d354d1cdacf2b3ac2d87a092f19a4c5'
+          file=pathlib.Path(os.environ['RUNNER_TEMP'])/filename
+          subprocess.run(['curl','--fail','--silent','--show-error','--location','--retry','2','--max-time','300',url,'--output',str(file)],check=True)
+          assert hashlib.sha256(file.read_bytes()).hexdigest()==expected
+          checksum=file.parent/'SHA256SUMS.txt'
+          checksum.write_text(expected+'  '+filename+'\n')
+          subprocess.run(['gh','release','upload','v0.9.5',str(file),str(checksum),'--repo',os.environ['GITHUB_REPOSITORY']],check=True)
+          print('Approved DMG and checksum uploaded successfully.')
+          TRANSFER
